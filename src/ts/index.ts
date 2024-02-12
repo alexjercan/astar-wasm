@@ -2,6 +2,7 @@ import Allocator from "./allocator";
 import { Position, PositionArray, PathfindFunction } from "./astar";
 
 class World {
+    pathfindFn: PathfindFunction;
     allocator: Allocator;
     width: number;
     height: number;
@@ -11,8 +12,9 @@ class World {
     map: boolean[][];
     path: Position[];
 
-    constructor(allocator: Allocator, width: number, height: number, cellSize: number) {
+    constructor(allocator: Allocator, pathfindFn: PathfindFunction, width: number, height: number, cellSize: number) {
         this.allocator = allocator;
+        this.pathfindFn = pathfindFn;
         this.width = width;
         this.height = height;
         this.cellSize = cellSize;
@@ -121,14 +123,10 @@ class World {
         let endPtr = end.alloc(this.allocator);
         let pathPtr = path.alloc(this.allocator);
 
-        let pathfind = w.instance.exports.pathfind as PathfindFunction;
-        let result = pathfind(obstaclesPtr, this.width, this.height, startPtr, endPtr, pathPtr);
+        let result = this.pathfindFn(obstaclesPtr, this.width, this.height, startPtr, endPtr, pathPtr);
 
         path = PositionArray.decode(this.allocator.memory, pathPtr);
         this.path = path.items;
-
-        console.log(result);
-        console.log(path);
 
         return result;
     }
@@ -160,7 +158,8 @@ WebAssembly.instantiateStreaming(fetch("astar.wasm"), {
         (w.instance.exports.__heap_base as WebAssembly.Global).value,
     );
 
-    let world = new World(allocator, 10, 10, 50);
+    let pathfind = w.instance.exports.pathfind as PathfindFunction;
+    let world = new World(allocator, pathfind, 10, 10, 50);
 
     world.renderWorld();
 });
