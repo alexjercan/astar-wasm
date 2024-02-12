@@ -1,4 +1,4 @@
-import Allocator from './allocator';
+import Allocator from "./allocator";
 
 export class Position {
     x: number;
@@ -74,7 +74,13 @@ export class PositionArray {
 
         return ptr;
     }
-
 }
 
-export type PathfindFunction = (obstacles: number, width: number, height: number, start: number, end: number, path: number) => number;
+export type PathfindFunction = (
+    obstacles: number,
+    width: number,
+    height: number,
+    start: number,
+    end: number,
+    path: number
+) => number;
