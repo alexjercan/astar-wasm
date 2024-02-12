@@ -1,131 +1,145 @@
-function parseWorld(input: string): [PositionArray, number, number] {
-    let obstacles: Position[] = [];
-    let lines = input.split("\n");
-    for (let y = 0; y < lines.length; y++) {
-        let line = lines[y];
-        for (let x = 0; x < line.length; x++) {
-            if (line[x] === "#") {
-                obstacles.push(new Position(x, y));
+import Allocator from "./allocator";
+import { Position, PositionArray, PathfindFunction } from "./astar";
+
+class World {
+    allocator: Allocator;
+    width: number;
+    height: number;
+    cellSize: number;
+
+    canvas: HTMLCanvasElement;
+    map: boolean[][];
+    path: Position[];
+
+    constructor(allocator: Allocator, width: number, height: number, cellSize: number) {
+        this.allocator = allocator;
+        this.width = width;
+        this.height = height;
+        this.cellSize = cellSize;
+
+        this.canvas = null;
+        this.map = new Array(height).fill(0).map(() => new Array(width).fill(false));
+        this.path = null;
+
+        let root = document.createElement("div");
+        root.id = "root";
+        document.body.appendChild(root);
+
+        let canvas = document.createElement("canvas");
+        canvas.width = this.width * this.cellSize;
+        canvas.height = this.height * this.cellSize;
+        root.appendChild(canvas);
+
+        let runButton = document.createElement("button");
+        runButton.textContent = "Run";
+        runButton.onclick = () => {
+            this.path = null;
+            this.pathfind();
+            this.renderWorld();
+        };
+        root.appendChild(runButton);
+
+        canvas.addEventListener("click", (e) => {
+            let x = Math.floor(e.offsetX / this.cellSize);
+            let y = Math.floor(e.offsetY / this.cellSize);
+
+            this.map[y][x] = !this.map[y][x];
+            this.renderWorld();
+        });
+
+        this.canvas = canvas;
+    }
+
+    renderWorld(): void {
+        let ctx = this.canvas.getContext("2d");
+        ctx.clearRect(0, 0, this.width * this.cellSize, this.height * this.cellSize);
+
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < this.width; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * this.cellSize, 0);
+            ctx.lineTo(i * this.cellSize, this.height * this.cellSize);
+            ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.moveTo(this.width * this.cellSize, 0);
+        ctx.lineTo(this.width * this.cellSize, this.height * this.cellSize);
+        ctx.stroke();
+
+        for (let i = 0; i < this.height; i++) {
+            ctx.beginPath();
+            ctx.moveTo(0, i * this.cellSize);
+            ctx.lineTo(this.width * this.cellSize, i * this.cellSize);
+            ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.moveTo(0, this.height * this.cellSize);
+        ctx.lineTo(this.width * this.cellSize, this.height * this.cellSize);
+        ctx.stroke();
+
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                if (this.map[y][x]) {
+                    ctx.fillStyle = "black";
+                    ctx.fillRect(x * this.cellSize, y * this.cellSize, this.cellSize, this.cellSize);
+                }
             }
         }
-    }
 
-    return [new PositionArray(obstacles, obstacles.length, obstacles.length), lines[0].length, lines.length];
-}
-
-class Allocator {
-    memory: Uint8Array;
-    offset: number;
-
-    constructor(memory: Uint8Array, offset: number) {
-        this.memory = memory;
-        this.offset = offset;
-    }
-
-    malloc(sz: number): number {
-        const ptr = this.offset;
-        this.offset += sz;
-        return ptr;
-    }
-
-    realloc(ptr: number, oldSz: number, newSz: number): number {
-        const newPtr = this.malloc(newSz);
-        this.memory.set(this.memory.slice(ptr, ptr + oldSz), newPtr);
-        return newPtr;
-    }
-
-    free(_ptr: number): void {
-        console.log("Chads don't free");
-    }
-}
-
-class Position {
-    x: number;
-    y: number;
-
-    constructor(x: number, y: number) {
-        this.x = x;
-        this.y = y;
-    }
-
-    static decode(view: Uint8Array, ptr: number): Position {
-        let x = new DataView(view.buffer, ptr, 4).getInt32(0, true);
-        let y = new DataView(view.buffer, ptr + 4, 4).getInt32(0, true);
-
-        return new Position(x, y);
-    }
-
-    encode(view: Uint8Array, ptr: number): void {
-        new DataView(view.buffer, ptr, 4).setInt32(0, this.x, true);
-        new DataView(view.buffer, ptr + 4, 4).setInt32(0, this.y, true);
-    }
-
-    alloc(allocator: Allocator): number {
-        let view = allocator.memory;
-        let ptr = allocator.malloc(8);
-
-        this.encode(view, ptr);
-
-        return ptr;
-    }
-}
-
-class PositionArray {
-    items: Position[];
-    count: number;
-    capacity: number;
-
-    constructor(items: Position[], count: number, capacity: number) {
-        this.items = items;
-        this.count = count;
-        this.capacity = capacity;
-    }
-
-    static decode(view: Uint8Array, ptr: number): PositionArray {
-        let itemsPtr = new DataView(view.buffer, ptr, 4).getUint32(0, true);
-        let count = new DataView(view.buffer, ptr + 4, 4).getUint32(0, true);
-        let capacity = new DataView(view.buffer, ptr + 8, 4).getUint32(0, true);
-
-        let items: Position[] = [];
-        for (let i = 0; i < count; i++) {
-            items.push(Position.decode(view, itemsPtr + i * 8));
+        if (this.path !== null && this.path.length > 1) {
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(this.path[0].x * this.cellSize + this.cellSize / 2, this.path[0].y * this.cellSize + this.cellSize / 2);
+            for (let i = 1; i < this.path.length; i++) {
+                ctx.lineTo(this.path[i].x * this.cellSize + this.cellSize / 2, this.path[i].y * this.cellSize + this.cellSize / 2);
+            }
+            ctx.stroke();
         }
-
-        return new PositionArray(items, count, capacity);
     }
 
-    encode(view: Uint8Array, ptr: number): void {
-        let itemsPtr = ptr + 12;
-        for (let i = 0; i < this.count; i++) {
-            this.items[i].encode(view, itemsPtr + i * 8);
+    pathfind(): number {
+        this.allocator.reset();
+
+        let start = new Position(0, 0);
+        let end = new Position(this.width - 1, this.height - 1);
+        let path = new PositionArray([], 0, 1024);
+
+        let positions: Position[] = [];
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                if (this.map[y][x]) {
+                    positions.push(new Position(x, y));
+                }
+            }
         }
+        let obstacles = new PositionArray(positions, positions.length, positions.length);
 
-        new DataView(view.buffer, ptr, 4).setUint32(0, itemsPtr, true);
-        new DataView(view.buffer, ptr + 4, 4).setUint32(0, this.count, true);
-        new DataView(view.buffer, ptr + 8, 4).setUint32(0, this.capacity, true);
+        let obstaclesPtr = obstacles.alloc(this.allocator);
+        let startPtr = start.alloc(this.allocator);
+        let endPtr = end.alloc(this.allocator);
+        let pathPtr = path.alloc(this.allocator);
+
+        let pathfind = w.instance.exports.pathfind as PathfindFunction;
+        let result = pathfind(obstaclesPtr, this.width, this.height, startPtr, endPtr, pathPtr);
+
+        path = PositionArray.decode(this.allocator.memory, pathPtr);
+        this.path = path.items;
+
+        console.log(result);
+        console.log(path);
+
+        return result;
     }
-
-    alloc(allocator: Allocator): number {
-        let view = allocator.memory;
-        let ptr = allocator.malloc(12 + this.capacity * 8);
-
-        this.encode(view, ptr);
-
-        return ptr;
-    }
-
 }
-
-type PathfindFunction = (obstacles: number, width: number, height: number, start: number, end: number, path: number) => number;
 
 let w: WebAssembly.WebAssemblyInstantiatedSource = null;
 let allocator: Allocator = null;
 
-const world = "...##..\n.#..#.#\n..#....\n#.##.#.";
-
 WebAssembly.instantiateStreaming(fetch("astar.wasm"), {
     env: {
-        memory: new WebAssembly.Memory({ initial: 256, maximum: 256 }),
+        memory: new WebAssembly.Memory({ initial: 256 }),
         astar_malloc: (sz: number): number => {
             return allocator.malloc(sz);
         },
@@ -141,30 +155,12 @@ WebAssembly.instantiateStreaming(fetch("astar.wasm"), {
     },
 }).then((value) => {
     w = value;
-
     allocator = new Allocator(
         new Uint8Array((w.instance.exports.memory as WebAssembly.Memory).buffer),
         (w.instance.exports.__heap_base as WebAssembly.Global).value,
     );
 
-    let [obstacles, width, height] = parseWorld(world);
-    let start = new Position(0, 0);
-    let end = new Position(width - 1, height - 1);
-    let path = new PositionArray([], 0, 0);
+    let world = new World(allocator, 10, 10, 50);
 
-    let obstaclesPtr = obstacles.alloc(allocator);
-    let startPtr = start.alloc(allocator);
-    let endPtr = end.alloc(allocator);
-    let pathPtr = path.alloc(allocator);
-
-    let pathfind = w.instance.exports.pathfind as PathfindFunction;
-    let result = pathfind(obstaclesPtr, width, height, startPtr, endPtr, pathPtr);
-
-    console.log(result);
-
-    path = PositionArray.decode(allocator.memory, pathPtr);
-
-    for (let i = path.count - 1; i >= 0; i--) {
-        console.log(`(${path.items[i].x}, ${path.items[i].y})`);
-    }
+    world.renderWorld();
 });

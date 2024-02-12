@@ -39,7 +39,10 @@ int world_set(struct world *w, int x, int y, unsigned char value) {
     return 0;
 }
 
-void world_free(struct world *w) { astar_free(w->map); }
+void world_free(struct world *w) {
+    if (w->map != NULL)
+        astar_free(w->map);
+}
 
 const struct position directions[] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
 const int num_directions = sizeof(directions) / sizeof(directions[0]);
@@ -215,7 +218,7 @@ int pathfind(struct position_array *obstacles, int width, int height,
 
     struct world w;
     if (world_init(&w, width, height) != 0) {
-        return 1;
+        return_defer(1);
     }
 
     for (int i = 0; i < obstacles->count; i++) {
